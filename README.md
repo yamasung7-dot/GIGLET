@@ -1,25 +1,23 @@
 # GIGLET
 
-GIGLET is the development repository for a Blockbench renderer focused on real progressive ray rendering rather than screenshots or web uploaders.
+GIGLET is a Blockbench renderer focused on useful, practical lighting first.
 
-## 1.0.0 — Ray Core
+## 2.0.0 — Regular Lighting
 
-The first implementation:
-- extracts visible Blockbench mesh geometry;
-- builds an acceleration structure in a Web Worker;
-- traces rays progressively;
-- supports direct lighting, shadows, multiple diffuse bounces, accumulation, and cancellation;
-- renders into a dedicated canvas instead of replacing Blockbench's viewport;
-- exports the finished image as PNG.
+The ray-tracing experiment was removed after it proved too heavy and unreliable for the intended workflow.
 
-This is deliberately a small renderer core. Textured/PBR materials, environment lighting, glossy reflection, denoising, and GPU path tracing are future work rather than pretend features.
-
-## Install
+The current renderer:
+- uses Blockbench's existing Three.js ecosystem;
+- renders the model in an isolated scene;
+- uses normal real-time Three.js lighting and shadows;
+- has a main point light represented by a camera-facing billboard;
+- uses billboard size as the light's size control;
+- derives light power from billboard area, so larger billboards produce stronger lights;
+- provides light position controls;
+- keeps the renderer separate from Blockbench's normal viewport.
 
 Raw plugin URL:
 
 https://raw.githubusercontent.com/yamasung7-dot/GIGLET/main/plugins/giglet_render/giglet_render.js
 
-## Important
-
-1.0.0 is an initial ray core, not a finished Cycles replacement. Runtime testing in Blockbench is still required before calling this release production-ready.
+This is source-level work and still needs runtime testing in Blockbench.
