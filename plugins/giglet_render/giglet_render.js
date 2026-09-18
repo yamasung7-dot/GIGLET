@@ -342,7 +342,7 @@
 					}
 				}
 				self.postMessage({type:"done",sample:samples});
-			}catch(err){self.postMessage({type:"error",message:String(err&&err.stack||err));}}
+			}catch(err){self.postMessage({type:"error",message:String(err&&err.stack||err)});}}
 		};
 		`;
 	}
