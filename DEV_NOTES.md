@@ -1,32 +1,49 @@
 # GIGLET Development Notes
 
-## 4.0.0 — Movable Light Billboard
+## 5.0.0 — Light Plug Foundation
 
-### Purpose
-Add a simple, practical regular light directly to Blockbench's existing viewport and make its position behave like a normal editable Blockbench object.
+### Why this release exists
+
+The earlier GIGLET renderer was being rebuilt from scratch. That was unnecessary. The original **Blockbench Light Plug** already contained useful native Blockbench/Three.js lighting work.
+
+For 5.0.0, the lighting foundation was taken from that project and adapted instead of reinventing the same layer.
 
 ### Current code
-- `plugins/giglet_render/giglet_render.js` is the single executable plugin file.
-- The plugin adds a **Tools → GIGLET Lighting** menu.
-- **Create Light Billboard** creates a normal Three.js `PointLight` in `Canvas.scene`.
-- It also creates a native Blockbench `Locator` named **GIGLET Light**.
-- The Locator is kept at the project root and acts as the light's editable world-space position controller.
-- The user can select and move the Locator with Blockbench's normal transform controls.
-- A Three.js `Sprite` billboard is attached to the Locator's Three.js mesh.
-- Billboard size controls the light size and its power is derived from billboard area.
-- The menu provides preset light colors and a custom color picker.
-- The menu provides light-size and removal controls, but no position dialog.
-- The light and billboard are marked `no_export` so they are viewport helpers rather than model geometry.
-- A lightweight `render_frame` listener synchronizes the PointLight with the Locator's current world position and removes the viewport light if the user deletes the Locator.
+
+- `plugins/giglet_render/giglet_render.js` remains the single executable plugin file.
+- The plugin registers as `giglet_render`.
+- A native Blockbench `Locator` named **GIGLET Light** is the editable controller.
+- The controller stays at the project root so its position is treated as world-space.
+- A regular Three.js `PointLight` is attached to the normal `Canvas.scene`.
+- A Three.js `Sprite` is attached to the Locator mesh as the visible camera-facing light billboard.
+- Billboard size controls the visual light size and contributes to point-light power.
+- Model bounds are read from visible meshes to establish a practical light range.
+- The light and billboard use `no_export`/helper state so they are not intended to become model geometry.
+- A lightweight `render_frame` listener keeps the Three.js light synchronized with the native Blockbench Locator.
+- Deleting the Locator removes the associated viewport light.
+- Lighting uses the regular Three.js point-light path rather than ray tracing.
+
+### What was reused from the old Light Plug
+
+The conceptual/native lighting pieces reused from the old project are:
+- Three.js light creation inside `Canvas.scene`;
+- model-bound calculation with `THREE.Box3`;
+- size/range-aware light setup;
+- normal Blockbench lifecycle cleanup;
+- the idea of letting Blockbench remain responsible for the model/viewport while the plugin adds lighting.
+
+The old Light Plug's large studio UI, PNG post-processing, and experimental shader/parallax system were **not** copied into this foundation.
 
 ### Deliberate non-responsibilities
-1. This version does not create a separate render window.
-2. This version does not implement ray tracing.
-3. This version does not implement PBR materials.
-4. This version does not implement a path tracer or custom renderer.
-5. This version does not change model geometry.
-6. This version does not claim physically accurate area-light shadows. The billboard is the visual size/control representation while the actual light is a regular point light.
-7. This version does not replace Blockbench's native transform controls with a custom position UI.
+
+1. No ray tracer.
+2. No separate render window.
+3. No custom geometry renderer.
+4. No replacement PBR material system.
+5. No custom position dialog.
+6. No fake area-light physics; the visible billboard represents size while the actual light is a regular point light.
+7. No mobile-optimization layer; MOP remains a separate project.
 
 ### Testing status
-Source-level implementation only. Load it in Blockbench and test the actual viewport behavior before calling it runtime-tested.
+
+Source-level implementation only. The plugin must be loaded and exercised in the current Blockbench build before it is considered runtime-tested.
