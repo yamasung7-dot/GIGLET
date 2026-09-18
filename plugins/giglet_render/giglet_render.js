@@ -1,112 +1,246 @@
 /*
- * GIGLET Render Core 1.0.0
- * Progressive CPU path tracer running in a Web Worker.
+ * GIGLET Render 2.0.0
+ * Regular Three.js lighting renderer.
  *
- * This first renderer intentionally uses Blockbench's existing scene geometry
- * as input and keeps rendering isolated from Blockbench's viewport renderer.
+ * The renderer is intentionally simple: Blockbench geometry is copied into
+ * an isolated Three.js scene, lit normally, and rendered to a canvas.
+ * Each light is represented by a camera-facing billboard. Billboard area
+ * controls both the visual light size and its power.
  */
-(function() {
+(function () {
 	const PLUGIN_ID = "giglet_render";
-	let renderAction;
+	let action;
 	let dialog;
-	let worker;
+	let renderer;
+	let renderScene;
+	let camera;
 	let renderCanvas;
-	let statusNode;
-	let sampleNode;
-	let stopButton;
-	let startButton;
+	let status;
 
 	Plugin.register(PLUGIN_ID, {
 		title: "GIGLET Render",
 		author: "Olive",
-		description: "Progressive offline ray renderer for Blockbench.",
-		version: "1.0.0",
+		description: "A lightweight Blockbench renderer with billboard-sized lights.",
+		version: "2.0.0",
 		min_version: "4.8.0",
 		variant: "both",
 		onload() {
-			renderAction = new Action("giglet_render_open", {
+			action = new Action("giglet_render_open", {
 			name: "GIGLET Render",
 			icon: "photo_camera",
-			description: "Render the current Blockbench model with the GIGLET ray renderer.",
-			click: openRenderer
+			description: "Open the GIGLET regular-lighting renderer.",
+			click: open
 		});
-		MenuBar.addAction(renderAction, "tools");
+		MenuBar.addAction(action, "tools");
 	},
 		onunload() {
-		stopRender();
+		if (renderer) renderer.dispose();
 		if (dialog) dialog.hide();
-		if (renderAction) renderAction.delete();
+		if (action) action.delete();
 	}
 	});
 
-	function openRenderer() {
+	function open() {
 		if (!dialog) createDialog();
 		dialog.show();
-		refreshPreview();
 	}
 
 	function createDialog() {
-		const html = `
+		const template = `
 		<div style="display:flex;flex-direction:column;height:100%;gap:8px;">
-			<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-				<label>Width <input id="giglet_width" type="number" min="64" max="1024" value="320" style="width:70px"></label>
-				<label>Height <input id="giglet_height" type="number" min="64" max="1024" value="320" style="width:70px"></label>
-				<label>Samples <input id="giglet_samples" type="number" min="1" max="4096" value="64" style="width:70px"></label>
-				<label>Bounces <input id="giglet_bounces" type="number" min="1" max="8" value="3" style="width:55px"></label>
-				<button id="giglet_start">Render</button>
-				<button id="giglet_stop" disabled>Stop</button>
+			<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">
+				<label>Width <input id="giglet_w" type="number" min="128" max="2048" value="640" style="width:65px"></label>
+				<label>Height <input id="giglet_h" type="number" min="128" max="2048" value="640" style="width:65px"></label>
+				<label>Light size <input id="giglet_size" type="number" min="0.1" max="100" step="0.1" value="4" style="width:55px"></label>
+				<label>Light X <input id="giglet_x" type="number" step="0.1" value="8" style="width:55px"></label>
+				<label>Y <input id="giglet_y" type="number" step="0.1" value="10" style="width:55px"></label>
+				<label>Z <input id="giglet_z" type="number" step="0.1" value="8" style="width:55px"></label>
+				<button id="giglet_render">Render</button>
 				<button id="giglet_save">Save PNG</button>
 			</div>
 			<div id="giglet_status">Ready.</div>
 			<div style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#181818;overflow:auto;">
-				<canvas id="giglet_canvas" style="max-width:100%;max-height:100%;image-rendering:auto;"></canvas>
+				<canvas id="giglet_canvas" style="max-width:100%;max-height:100%;"></canvas>
 			</div>
 		</div>`;
 
 		dialog = new Dialog({
 			id: "giglet_render_dialog",
 			title: "GIGLET Render",
-			width: 760,
-			height: 720,
-			component: { template: html }
+			width: 820,
+			height: 760,
+			component: { template }
 		});
 		dialog.onOpen = () => {
 			renderCanvas = document.getElementById("giglet_canvas");
-			statusNode = document.getElementById("giglet_status");
-			sampleNode = statusNode;
-			startButton = document.getElementById("giglet_start");
-			stopButton = document.getElementById("giglet_stop");
-			startButton.onclick = startRender;
-			stopButton.onclick = stopRender;
-			document.getElementById("giglet_save").onclick = saveRender;
-			refreshPreview();
+			status = document.getElementById("giglet_status");
+			document.getElementById("giglet_render").onclick = render;
+			document.getElementById("giglet_save").onclick = save;
 		};
 	}
 
-	function setStatus(text) {
-		if (statusNode) statusNode.textContent = text;
+	function num(id, fallback) {
+		const n = Number(document.getElementById(id)?.value);
+		return Number.isFinite(n) ? n : fallback;
 	}
 
-	function refreshPreview() {
-		if (!renderCanvas) return;
-		renderCanvas.width = 1;
-		renderCanvas.height = 1;
-		const ctx = renderCanvas.getContext("2d");
-		ctx.fillStyle = "#202020";
-		ctx.fillRect(0, 0, 1, 1);
+	function setStatus(message) {
+		if (status) status.textContent = message;
 	}
 
-	function stopRender() {
-		if (worker) {
-			worker.terminate();
-			worker = null;
+	function getBounds(root) {
+		const box = new THREE.Box3().setFromObject(root);
+		if (box.isEmpty()) return null;
+		return box;
+	}
+
+	function collectModel(scene) {
+		let source = null;
+		if (typeof Preview !== "undefined" && Preview.selected && Preview.selected.scene) {
+			source = Preview.selected.scene;
 		}
-		if (stopButton) stopButton.disabled = true;
-		if (startButton) startButton.disabled = false;
+		if (!source) {
+			source = new THREE.Group();
+			if (typeof Outliner !== "undefined" && Outliner.elements) {
+				for (const element of Outliner.elements) {
+					if (element.mesh && element.visibility !== false) {
+						source.add(element.mesh.clone(true));
+					}
+				}
+			}
+		}
+		const model = new THREE.Group();
+		model.name = "GIGLET_Model";
+		source.updateMatrixWorld(true);
+		source.traverse(object => {
+			if (!object.isMesh || !object.visible || !object.geometry) return;
+			const clone = object.clone(true);
+			clone.material = Array.isArray(object.material)
+				? object.material.map(material => material && material.clone ? material.clone() : material)
+				: (object.material && object.material.clone ? object.material.clone() : object.material);
+			model.add(clone);
+		});
+		if (!model.children.length && source.isMesh) model.add(source.clone(true));
+		scene.add(model);
+		return model;
 	}
 
-	function saveRender() {
-		if (!renderCanvas || renderCanvas.width < 2) return;
+	function makeBillboard(size, color) {
+		const group = new THREE.Group();
+		const material = new THREE.MeshBasicMaterial({
+			color,
+			transparent: true,
+			opacity: 0.7,
+			depthWrite: false,
+			side: THREE.DoubleSide
+		});
+		const geometry = new THREE.PlaneGeometry(size, size);
+		const billboard = new THREE.Mesh(geometry, material);
+		billboard.name = "GIGLET_Light_Billboard";
+		group.add(billboard);
+		group.userData.billboard = billboard;
+		return group;
+	}
+
+	function setupLight(scene, size, x, y, z) {
+		const safeSize = Math.max(0.1, size);
+		// Billboard area controls the light power. Larger billboard = stronger light.
+		const area = safeSize * safeSize;
+		const power = Math.min(100000, area * 12);
+		const light = new THREE.PointLight(0xffffff, 1, Math.max(20, safeSize * 20), 2);
+		if ("power" in light) light.power = power;
+		light.position.set(x, y, z);
+		light.castShadow = true;
+		light.shadow.mapSize.set(1024, 1024);
+
+		const billboard = makeBillboard(safeSize, 0xfff1c7);
+		billboard.position.copy(light.position);
+		billboard.userData.light = light;
+		light.userData.billboard = billboard;
+		scene.add(light);
+		scene.add(billboard);
+		return light;
+	}
+
+	function aimBillboard(billboard, cam) {
+		billboard.lookAt(cam.position);
+	}
+
+	function buildCamera(model, width, height) {
+		const box = getBounds(model);
+		if (!box) return null;
+		const center = box.getCenter(new THREE.Vector3());
+		const size = box.getSize(new THREE.Vector3());
+		const radius = Math.max(size.x, size.y, size.z, 1);
+		const cam = new THREE.PerspectiveCamera(45, width / height, 0.01, radius * 100);
+		cam.position.set(center.x + radius * 2.4, center.y + radius * 1.5, center.z + radius * 2.4);
+		cam.lookAt(center.x, center.y + size.y * 0.08, center.z);
+		return cam;
+	}
+
+	function render() {
+		try {
+			const width = Math.max(128, Math.min(2048, Math.floor(num("giglet_w", 640))));
+			const height = Math.max(128, Math.min(2048, Math.floor(num("giglet_h", 640))));
+			const size = Math.max(0.1, Math.min(100, num("giglet_size", 4)));
+			const x = num("giglet_x", 8);
+			const y = num("giglet_y", 10);
+			const z = num("giglet_z", 8);
+
+			if (!renderer) {
+				renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+			}
+			renderer.setPixelRatio(1);
+			renderer.setSize(width, height, false);
+			renderer.shadowMap.enabled = true;
+			renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+			renderer.outputColorSpace = THREE.SRGBColorSpace || renderer.outputColorSpace;
+
+			renderScene = new THREE.Scene();
+			renderScene.background = new THREE.Color(0.045, 0.055, 0.07);
+
+			const model = collectModel(renderScene);
+			if (!model.children.length) {
+				setStatus("No renderable model geometry found.");
+				return;
+			}
+
+			camera = buildCamera(model, width, height);
+			if (!camera) {
+				setStatus("Could not frame the model.");
+				return;
+			}
+
+			// Small ambient contribution keeps unlit faces from becoming pure black.
+			renderScene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.35));
+
+			const key = setupLight(renderScene, size, x, y, z);
+			const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+			fill.position.set(-4, 6, -5);
+			renderScene.add(fill);
+
+			// The billboard is camera-facing, but its world position remains the light position.
+			aimBillboard(key.userData.billboard, camera);
+
+			renderer.render(renderScene, camera);
+			if (renderCanvas) {
+				renderCanvas.width = width;
+				renderCanvas.height = height;
+				const ctx = renderCanvas.getContext("2d");
+				ctx.clearRect(0, 0, width, height);
+				ctx.drawImage(renderer.domElement, 0, 0);
+			}
+			setStatus("Rendered with regular Three.js lighting • billboard size " + size + " • power " + Math.round(key.power));
+		} catch (error) {
+			setStatus("Render error: " + String(error && error.message || error));
+		}
+	}
+
+	function save() {
+		if (!renderCanvas || renderCanvas.width < 2) {
+			setStatus("Render something first.");
+			return;
+		}
 		renderCanvas.toBlob(blob => {
 			if (!blob) return;
 			Blockbench.export({
@@ -115,235 +249,5 @@
 				content: blob
 			});
 		});
-	}
-
-	function readNumber(id, fallback) {
-		const node = document.getElementById(id);
-		const value = Number(node && node.value);
-		return Number.isFinite(value) ? value : fallback;
-	}
-
-	function collectScene() {
-		const triangles = [];
-		const elements = (Outliner && Outliner.elements) ? Outliner.elements : [];
-		const temp = new THREE.Vector3();
-
-		for (const element of elements) {
-			const mesh = element.mesh;
-			if (!mesh || !mesh.geometry || !mesh.visible || element.visibility === false) continue;
-			const geometry = mesh.geometry;
-			const position = geometry.attributes && geometry.attributes.position;
-			if (!position) continue;
-
-			mesh.updateMatrixWorld(true);
-			const matrix = mesh.matrixWorld;
-			const index = geometry.index;
-			const count = index ? index.count : position.count;
-
-			function point(i) {
-				temp.fromBufferAttribute(position, i).applyMatrix4(matrix);
-				return [temp.x, temp.y, temp.z];
-			}
-
-			for (let i = 0; i + 2 < count; i += 3) {
-				const ia = index ? index.getX(i) : i;
-				const ib = index ? index.getX(i + 1) : i + 1;
-				const ic = index ? index.getX(i + 2) : i + 2;
-				triangles.push({a: point(ia), b: point(ib), c: point(ic), color: [0.72, 0.72, 0.72]});
-			}
-		}
-		return triangles;
-	}
-
-	function boundsOf(triangles) {
-		const min = [Infinity, Infinity, Infinity];
-		const max = [-Infinity, -Infinity, -Infinity];
-		for (const t of triangles) {
-			for (const p of [t.a, t.b, t.c]) {
-				for (let i = 0; i < 3; i++) {
-					if (p[i] < min[i]) min[i] = p[i];
-					if (p[i] > max[i]) max[i] = p[i];
-				}
-			}
-		}
-		return {min, max};
-	}
-
-	function buildCamera(triangles) {
-		const b = boundsOf(triangles);
-		const center = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
-		const size = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1);
-		return {
-			position: [center[0] + size * 2.2, center[1] + size * 1.35, center[2] + size * 2.2],
-			target: [center[0], center[1] + (b.max[1] - b.min[1]) * 0.15, center[2]],
-			fov: 48
-		};
-	}
-
-	function startRender() {
-		stopRender();
-		const triangles = collectScene();
-		if (!triangles.length) {
-			setStatus("No visible renderable geometry found.");
-			return;
-		}
-
-		const width = Math.max(64, Math.min(1024, Math.floor(readNumber("giglet_width", 320))));
-		const height = Math.max(64, Math.min(1024, Math.floor(readNumber("giglet_height", 320))));
-		const samples = Math.max(1, Math.min(4096, Math.floor(readNumber("giglet_samples", 64))));
-		const bounces = Math.max(1, Math.min(8, Math.floor(readNumber("giglet_bounces", 3))));
-		const camera = buildCamera(triangles);
-
-		renderCanvas.width = width;
-		renderCanvas.height = height;
-		startButton.disabled = true;
-		stopButton.disabled = false;
-		setStatus("Building ray scene…");
-
-		const source = workerSource();
-		worker = new Worker(URL.createObjectURL(new Blob([source], {type: "text/javascript"})));
-		worker.onmessage = event => {
-			const data = event.data;
-			if (data.type === "frame") {
-				const image = new ImageData(new Uint8ClampedArray(data.pixels), width, height);
-				renderCanvas.getContext("2d").putImageData(image, 0, 0);
-				setStatus("Rendering • sample " + data.sample + " / " + samples);
-			} else if (data.type === "done") {
-				setStatus("Finished • " + data.sample + " samples.");
-				stopRender();
-			} else if (data.type === "error") {
-				setStatus("Render error: " + data.message);
-				stopRender();
-			}
-		};
-		worker.postMessage({triangles, width, height, samples, bounces, camera});
-	}
-
-	function workerSource() {
-		return `
-		const PI = Math.PI;
-		const EPS = 0.0001;
-		const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
-		const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
-		const mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
-		const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-		const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-		const length=a=>Math.sqrt(dot(a,a));
-		const normalize=a=>mul(a,1/Math.max(length(a),EPS));
-		const max3=a=>Math.max(a[0],a[1],a[2]);
-		const clamp=x=>Math.max(0,Math.min(1,x));
-		let seed=123456789;
-		function rand(){seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;}
-		function centroid(t){return mul(add(add(t.a,t.b),t.c),1/3);}
-		function triBounds(t){
-			return {
-				min:[Math.min(t.a[0],t.b[0],t.c[0]),Math.min(t.a[1],t.b[1],t.c[1]),Math.min(t.a[2],t.b[2],t.c[2])],
-				max:[Math.max(t.a[0],t.b[0],t.c[0]),Math.max(t.a[1],t.b[1],t.c[1]),Math.max(t.a[2],t.b[2],t.c[2])]
-			};
-		}
-		function union(a,b){return {min:[Math.min(a.min[0],b.min[0]),Math.min(a.min[1],b.min[1]),Math.min(a.min[2],b.min[2])],max:[Math.max(a.max[0],b.max[0]),Math.max(a.max[1],b.max[1]),Math.max(a.max[2],b.max[2])]};}
-		function hitBox(ray,b,tMax){
-			let t0=0,t1=tMax;
-			for(let i=0;i<3;i++){
-				const inv=1/(ray.d[i]||1e-12);
-				let a=(b.min[i]-ray.o[i])*inv,bv=(b.max[i]-ray.o[i])*inv;
-				if(inv<0){const q=a;a=bv;bv=q;}
-				t0=Math.max(t0,a);t1=Math.min(t1,bv);
-				if(t1<=t0)return false;
-			}
-			return true;
-		}
-		function build(items){
-			if(items.length<=4){
-			let b=triBounds(items[0]);for(let i=1;i<items.length;i++)b=union(b,triBounds(items[i]));
-			return {b,items};
-			}
-			let b=triBounds(items[0]);for(let i=1;i<items.length;i++)b=union(b,triBounds(items[i]));
-			const extent=sub(b.max,b.min);let axis=0;if(extent[1]>extent[axis])axis=1;if(extent[2]>extent[axis])axis=2;
-			items.sort((x,y)=>centroid(x)[axis]-centroid(y)[axis]);
-			const mid=items.length>>1;
-			return {b,left:build(items.slice(0,mid)),right:build(items.slice(mid))};
-		}
-		function hitTri(ray,t,maxT){
-			const e1=sub(t.b,t.a),e2=sub(t.c,t.a),p=cross(ray.d,e2),det=dot(e1,p);
-			if(Math.abs(det)<EPS)return null;
-			const inv=1/det,s=sub(ray.o,t.a),u=dot(s,p)*inv;
-			if(u<0||u>1)return null;
-			const q=cross(s,e1),v=dot(ray.d,q)*inv;
-			if(v<0||u+v>1)return null;
-			const d=dot(e2,q)*inv;
-			if(d<EPS||d>maxT)return null;
-			return {d, p:add(ray.o,mul(ray.d,d)), n:normalize(cross(e1,e2)), color:t.color};
-		}
-		function hitNode(node,ray,best){
-			if(!hitBox(ray,node.b,best.d))return best;
-			if(node.items){
-				for(const t of node.items){const h=hitTri(ray,t,best.d);if(h){best=h;}}
-				return best;
-			}
-			best=hitNode(node.left,ray,best);
-			best=hitNode(node.right,ray,best);
-			return best;
-		}
-		function cosineHemisphere(n){
-			const r1=2*PI*rand(),r2=rand(),r2s=Math.sqrt(r2);
-			const w=n;
-			const u=normalize(cross(Math.abs(w[0])>0.1?[0,1,0]:[1,0,0],w));
-			const v=cross(w,u);
-			return normalize(add(add(mul(u,Math.cos(r1)*r2s),mul(v,Math.sin(r1)*r2s)),mul(w,Math.sqrt(1-r2))));
-		}
-		function cameraRay(x,y,camera,width,height){
-			const forward=normalize(sub(camera.target,camera.position));
-			const right=normalize(cross(forward,[0,1,0]));
-			const up=normalize(cross(right,forward));
-			const aspect=width/height,scale=Math.tan(camera.fov*PI/360);
-			const px=((x+rand())/width*2-1)*aspect*scale;
-			const py=(1-(y+rand())/height*2)*scale;
-			return {o:camera.position,d:normalize(add(forward,add(mul(right,px),mul(up,py))))};
-		}
-		function sky(d){const t=0.5*(d[1]+1);return [0.08*(1-t)+0.32*t,0.10*(1-t)+0.48*t,0.15*(1-t)+0.78*t];}
-		function trace(ray,bvh,bounces){
-			let radiance=[0,0,0],throughput=[1,1,1];
-			for(let bounce=0;bounce<bounces;bounce++){
-				const h=hitNode(bvh,ray,{d:Infinity});
-				if(!h){const s=sky(ray.d);radiance=add(radiance,[throughput[0]*s[0],throughput[1]*s[1],throughput[2]*s[2]]);break;}
-				const lightDir=normalize([0.55,0.85,0.35]);
-				const shadowOrigin=add(h.p,mul(h.n,EPS*8));
-				const shadow=hitNode(bvh,{o:shadowOrigin,d:lightDir},{d:Infinity});
-				const ndl=Math.max(0,dot(h.n,lightDir));
-				const direct=shadow.d===Infinity?ndl:0.05*ndl;
-				throughput=[throughput[0]*h.color[0],throughput[1]*h.color[1],throughput[2]*h.color[2]];
-				radiance=add(radiance,mul(throughput,direct));
-				ray={o:shadowOrigin,d:cosineHemisphere(h.n)};
-				if(bounce>1){const q=Math.max(throughput[0],throughput[1],throughput[2]);if(rand()>Math.min(0.95,q)){break;}throughput=mul(throughput,1/Math.max(q,0.05));}
-			}
-			return radiance;
-		}
-		self.onmessage=e=>{
-			try{
-				const {triangles,width,height,samples,bounces,camera}=e.data;
-				const bvh=build(triangles.slice());
-				const accum=new Float32Array(width*height*3);
-				for(let s=1;s<=samples;s++){
-					for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-						const c=trace(cameraRay(x,y,camera,width,height),bvh,bounces);
-						const i=(y*width+x)*3;accum[i]+=c[0];accum[i+1]+=c[1];accum[i+2]+=c[2];
-					}
-					if(s===1||s%1===0){
-						const pixels=new Uint8ClampedArray(width*height*4);
-						for(let i=0,p=0;i<accum.length;i+=3,p+=4){
-							const inv=1/s;
-							pixels[p]=255*Math.pow(clamp(accum[i]*inv),1/2.2);
-							pixels[p+1]=255*Math.pow(clamp(accum[i+1]*inv),1/2.2);
-							pixels[p+2]=255*Math.pow(clamp(accum[i+2]*inv),1/2.2);
-							pixels[p+3]=255;
-						}
-						self.postMessage({type:"frame",sample:s,pixels},[pixels.buffer]);
-					}
-				}
-				self.postMessage({type:"done",sample:samples});
-			}catch(err){self.postMessage({type:"error",message:String(err&&err.stack||err)});}}
-		};
-		`;
 	}
 })();
