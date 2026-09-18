@@ -2,19 +2,21 @@
 
 GIGLET is a Blockbench lighting experiment focused on adding a practical regular light directly to the normal viewport.
 
-## 3.0.0 — Billboard Lighting
+## 4.0.0 — Movable Light Billboard
 
-The separate render window has been removed.
+The light is now represented by a real **Blockbench Locator object** instead of being positioned through a menu.
 
 The current feature:
 - creates a normal Three.js point light in Blockbench's existing viewport scene;
-- represents that light with a camera-facing billboard;
-- keeps the billboard attached to the light's position;
+- creates a movable **GIGLET Light** object in the Blockbench Outliner;
+- uses that object as the light's position controller;
+- lets you move the light with Blockbench's normal move controls, just like a model object;
+- displays a camera-facing billboard on the light object;
 - uses billboard size as the light-size control;
 - derives light power from billboard area, so a larger billboard produces more light;
 - lets you change the light color from the GIGLET Lighting menu;
 - includes preset colors plus a custom color picker;
-- lets you change the light position and billboard size from the menu;
+- lets you change billboard/light size from the menu;
 - can remove the light without changing model geometry.
 
 ### GIGLET Lighting menu
@@ -23,13 +25,16 @@ Use:
 
 **Tools → GIGLET Lighting → Create Light Billboard**
 
-Then use the same menu to change:
+After creation, select **GIGLET Light** in the Outliner and move it normally with Blockbench's transform controls.
+
+The menu is only used for:
 - Light Color
 - Light Size
-- Light Position
 - Remove Light
 
-The billboard is a Three.js Sprite, so it automatically faces the viewport camera.
+Position is no longer controlled by a dialog.
+
+The visible light marker is a Three.js Sprite attached to the Blockbench light object, so it faces the viewport camera.
 
 ## Raw plugin URL
 
