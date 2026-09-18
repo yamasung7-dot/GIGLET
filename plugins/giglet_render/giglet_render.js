@@ -34,8 +34,7 @@ function createLight(){
 function updateLight(){
  if(!light)return;
  const area=Math.max(.01,lightSize*lightSize),power=Math.min(100000,area*12);
- if("power" in light)light.power=power;
- light.intensity=1;light.distance=Math.max(20,lightSize*20);light.decay=2;light.color.setHex(lightColor);
+ if("power" in light)light.power=power;else light.intensity=Math.min(10,power/100);light.distance=Math.max(20,lightSize*20);light.decay=2;light.color.setHex(lightColor);
  if(billboard){billboard.position.copy(light.position);billboard.scale.set(lightSize,lightSize,1)}
  if(billboardMaterial)billboardMaterial.color.setHex(lightColor);
 }
@@ -52,7 +51,7 @@ function openCustomColor(){
 }
 function changeSize(){
  if(!light)return;
- new Dialog({id:"giglet_light_size_dialog",title:"GIGLET Light Size",form:{size:{label:"Billboard Size",type:"number",value:lightSize,min:.1,max:100,step:.1}},onConfirm(form){if(!light)return;const v=Number(form.size);if(Number.isFinite(v)){lightSize=Math.clamp(v,.1,100);updateLight()}}}).show();
+ new Dialog({id:"giglet_light_size_dialog",title:"GIGLET Light Size",form:{size:{label:"Billboard Size",type:"number",value:lightSize,min:.1,max:100,step:.1}},onConfirm(form){if(!light)return;const v=Number(form.size);if(Number.isFinite(v)){lightSize=Math.max(.1,Math.min(100,v));updateLight()}}}).show();
 }
 function changePosition(){
  if(!light)return;
