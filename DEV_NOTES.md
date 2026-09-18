@@ -1,35 +1,27 @@
 # GIGLET Development Notes
 
-## 1.0.0 — Ray Core
+## 3.0.0 — Billboard Lighting
 
 ### Purpose
-Create a real offline/progressive renderer inside Blockbench without duplicating the normal Three.js viewport renderer.
+Add a simple, practical regular light directly to Blockbench's existing viewport instead of opening a separate renderer window.
 
 ### Current code
-- `plugins/giglet_render/giglet_render.js`: complete executable plugin.
-- The plugin registers a Tools menu action and opens a dedicated render dialog.
-- Visible Blockbench Three.js meshes are converted to triangle data.
-- A Web Worker performs BVH-style scene acceleration and progressive ray tracing.
-- The renderer currently uses a simple diffuse material model and a directional light.
-- Samples accumulate progressively so the image improves as rendering continues.
-- Rendering can be cancelled without blocking the Blockbench UI thread.
-- The result can be saved as PNG.
+- `plugins/giglet_render/giglet_render.js` is the single executable plugin file.
+- The plugin adds a **Tools → GIGLET Lighting** menu.
+- **Create Light Billboard** creates a normal Three.js `PointLight` in `Canvas.scene`.
+- A Three.js `Sprite` is attached to the light position as the visible billboard.
+- Billboard size controls the light size and its power is derived from billboard area.
+- The menu provides preset light colors and a custom color picker.
+- The menu also provides light-size, position, and removal controls.
+- The light and billboard are marked `no_export` so they are viewport helpers rather than model geometry.
 
 ### Deliberate non-responsibilities
-1. This version does not replace Blockbench's viewport renderer.
-2. This version does not implement PBR textures.
-3. This version does not implement glossy/specular reflection.
-4. This version does not implement HDR environment maps.
-5. This version does not claim GPU path tracing.
-6. Mobile optimization is not a separate subsystem here; the worker only keeps the UI responsive.
-
-### Next research targets
-- verify runtime compatibility with current Blockbench;
-- inspect current material/texture APIs;
-- determine whether the Blockbench-bundled Three.js version can support a vendored WebGL2 BVH path tracer;
-- benchmark mobile resolution/sample limits;
-- add textured albedo only after the ray core is verified;
-- later evaluate GPU path tracing using a BVH encoded for shader traversal.
+1. This version does not create a separate render window.
+2. This version does not implement ray tracing.
+3. This version does not implement PBR materials.
+4. This version does not implement a path tracer or custom renderer.
+5. This version does not change model geometry.
+6. This version does not claim physically accurate area-light shadows. The billboard is the visual size/control representation while the actual light is a regular point light.
 
 ### Testing status
-Source-level implementation only. Do not describe this as runtime-tested until it has been loaded and exercised in Blockbench.
+Source-level implementation only. Load it in Blockbench and test the actual viewport behavior before calling it runtime-tested.
