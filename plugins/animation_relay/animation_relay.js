@@ -157,7 +157,6 @@
 	function clearAnimation() {
 		savedAnimation = null;
 		Blockbench.showQuickMessage('Saved animation cleared.');
-		updateActions();
 	}
 
 
