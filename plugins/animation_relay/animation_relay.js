@@ -77,7 +77,6 @@
 		Blockbench.showQuickMessage(
 			'Saved "' + savedAnimation.name + '" (' + boneCount + ' bones)'
 		);
-		updateActions();
 	}
 
 	function applyAnimation() {
@@ -161,10 +160,6 @@
 		updateActions();
 	}
 
-	function updateActions() {
-		if (applyAction) applyAction.setEnabled(!!savedAnimation);
-		if (clearAction) clearAction.setEnabled(!!savedAnimation);
-	}
 
 	Plugin.register(PLUGIN_ID, {
 		title: 'Animation Relay',
@@ -191,13 +186,14 @@
 		applyAction = new Action('animation_relay_apply', {
 			name: 'Animation Relay: Apply Saved',
 			icon: 'content_paste',
-			condition: () => typeof Group !== 'undefined' && Group.all && Group.all.length > 0,
+			condition: () => !!savedAnimation && typeof Group !== 'undefined' && Group.all && Group.all.length > 0,
 			click: applyAnimation
 		});
 
 		clearAction = new Action('animation_relay_clear', {
 			name: 'Animation Relay: Clear Saved',
 			icon: 'delete',
+			condition: () => !!savedAnimation,
 			click: clearAnimation
 		});
 
@@ -205,7 +201,6 @@
 		MenuBar.menus.tools.addAction(applyAction);
 		MenuBar.menus.tools.addAction(clearAction);
 
-		updateActions();
 	},
 
 	onunload() {
