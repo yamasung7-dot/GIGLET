@@ -1,23 +1,40 @@
 # GIGLET
 
-GIGLET is a Blockbench renderer focused on useful, practical lighting first.
+GIGLET is a Blockbench lighting experiment focused on adding a practical regular light directly to the normal viewport.
 
-## 2.0.0 — Regular Lighting
+## 3.0.0 — Billboard Lighting
 
-The ray-tracing experiment was removed after it proved too heavy and unreliable for the intended workflow.
+The separate render window has been removed.
 
-The current renderer:
-- uses Blockbench's existing Three.js ecosystem;
-- renders the model in an isolated scene;
-- uses normal real-time Three.js lighting and shadows;
-- has a main point light represented by a camera-facing billboard;
-- uses billboard size as the light's size control;
-- derives light power from billboard area, so larger billboards produce stronger lights;
-- provides light position controls;
-- keeps the renderer separate from Blockbench's normal viewport.
+The current feature:
+- creates a normal Three.js point light in Blockbench's existing viewport scene;
+- represents that light with a camera-facing billboard;
+- keeps the billboard attached to the light's position;
+- uses billboard size as the light-size control;
+- derives light power from billboard area, so a larger billboard produces more light;
+- lets you change the light color from the GIGLET Lighting menu;
+- includes preset colors plus a custom color picker;
+- lets you change the light position and billboard size from the menu;
+- can remove the light without changing model geometry.
 
-Raw plugin URL:
+### GIGLET Lighting menu
+
+Use:
+
+**Tools → GIGLET Lighting → Create Light Billboard**
+
+Then use the same menu to change:
+- Light Color
+- Light Size
+- Light Position
+- Remove Light
+
+The billboard is a Three.js Sprite, so it automatically faces the viewport camera.
+
+## Raw plugin URL
 
 https://raw.githubusercontent.com/yamasung7-dot/GIGLET/main/plugins/giglet_render/giglet_render.js
 
-This is source-level work and still needs runtime testing in Blockbench.
+## Testing
+
+This is source-level implementation work. It still needs to be loaded and exercised in the current Blockbench build before it can be considered runtime-tested.
